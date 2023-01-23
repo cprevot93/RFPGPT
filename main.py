@@ -14,6 +14,7 @@ os.environ["OPENAI_API_KEY"] = "sk-09HkLj0mmNP1DM3GEQKBT3BlbkFJHk7TLQvQm6LOy8DS0
 os.environ["SERPAPI_API_KEY"] = "9ded0c35cb5f9933a84c7bb93ee17514de7bd01582c5a111474f464e35631623"
 
 MAX_TOKENS = 512
+TOOLS = ["serpapi"]
 
 PROMPT_TEMPLATE = PromptTemplate(
     input_variables=["original_words", "num_words", "translate_to"],
@@ -30,10 +31,9 @@ def load_chain(tools_list, llm, agent="zero-shot-react-description"):
         tool_names = tools_list
         tools = load_tools(tool_names, llm=llm)
 
-        memory = ConversationBufferMemory(memory_key="chat_history")
+        # memory = ConversationBufferMemory(memory_key="chat_history")
 
-        chain = initialize_agent(
-            tools, llm, agent=agent, verbose=True, memory=memory)
+        chain = initialize_agent(tools, llm, agent=agent, verbose=True)
         express_chain = LLMChain(llm=llm, prompt=PROMPT_TEMPLATE, verbose=True)
 
     return chain, express_chain
@@ -48,12 +48,6 @@ def transform_text(desc, express_chain, num_words=0, translate_to=""):
     if translate_to != "":
         translate_to_str = "translated to " + translate_to + ", "
 
-    formatted_prompt = PROMPT_TEMPLATE.format(
-        original_words=desc,
-        num_words=num_words_prompt,
-        translate_to=translate_to_str
-    )
-
     trans_instr = num_words_prompt + translate_to_str
     if express_chain and len(trans_instr.strip()) > 0:
         generated_text = express_chain.run(
@@ -62,14 +56,6 @@ def transform_text(desc, express_chain, num_words=0, translate_to=""):
     else:
         print("Not transforming text")
         generated_text = desc
-
-    # replace all newlines with <br> in generated_text
-    # generated_text = generated_text.replace("\n", "\n\n")
-
-    prompt_plus_generated = "GPT prompt: " + \
-        formatted_prompt + "\n" + generated_text
-
-    print("prompt_plus_generated: " + prompt_plus_generated)
 
     return generated_text
 
@@ -95,18 +81,18 @@ def run_chain(chain, inp):
     return output
 
 
-def main():
+def question(product: str, input: str):
     llm = OpenAI(temperature=0, max_tokens=MAX_TOKENS)
-    chain, express_chain = load_chain(["serpapi"], llm)
+    chain, express_chain = load_chain(TOOLS, llm)
 
     if chain:
-        output = run_chain(chain, "What is the weather in New York?")
+        output = run_chain(chain, input)
         transformed_output = transform_text(
             output, express_chain, translate_to="French")
 
         # print transformed_output
-        # print(transformed_output)
+        print(transformed_output)
 
 
 if __name__ == "__main__":
-    main()
+    question("")
