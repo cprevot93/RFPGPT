@@ -5,19 +5,23 @@ import json
 import time
 
 import requests
-from selenium import webdriver
+from seleniumrequests import Firefox
 # from seleniumrequests import Chrome
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.keys import Keys
+from selenium.webdriver.firefox.options import Options
+import local_storage as ls
 
 log = logging.getLogger(__name__)
 TOKEN = ""
+COOKIES_FILE = 'cookies.pkl'
+LOCAL_STORAGE_FILE = 'local_storage.json'
 
 
 def get_reponses(s: requests.Session):
-    url = 'https://app.rfpio.com/rfpserver/ext/v1/content-lib/search'
+    url = 'https://app.rfpio.com/rfpserver/ext/v1/content-lib/search?companyId=5c588363c51a59041a54cf02'
     json = {
         'limit': 50,
         'metadata': True
@@ -43,9 +47,9 @@ def get_reponses(s: requests.Session):
 
 
 def login():
-    log.info('Login to RFPio...')
-
-    driver = webdriver.Chrome()
+    log.info('> Login to RFPio')
+    driver = Firefox()  # head browser
+    # load cookies, start head
     driver.get(
         "https://app.rfpio.com/#/page/login?companyId=5c588363c51a59041a54cf02")
 
@@ -53,22 +57,58 @@ def login():
 
     results = wait.until(EC.url_to_be(
         "https://app.rfpio.com/#/my-work?companyId=5c588363c51a59041a54cf02"))
-    # cookies = driver.get_cookies()
-    # pickle.dump(cookies, open("cookies.pkl", "wb"))
+    cookies = driver.get_cookies()
+    pickle.dump(cookies, open(COOKIES_FILE, "wb"))
 
-    # get the local storage
-    # localStorage = driver.execute_script("return window.localStorage;")
-    # userData = json.loads(localStorage["userData"])
-    # TOKEN = userData.get("access_token")
+    # save local storage
+    storage = ls.LocalStorage(driver)
+    with open(LOCAL_STORAGE_FILE, 'w') as f:
+        json.dump(storage.items(), f)
+
+    # close head browser
+    driver.close()
+
+
+def get_token() -> str:
+    if not os.path.exists(COOKIES_FILE) or not os.path.exists(LOCAL_STORAGE_FILE):
+        login()
+    else:
+        log.info('> Token found')
+
+    with open(LOCAL_STORAGE_FILE, 'r') as f:
+        j = json.load(f)
+        for key, value in j.items():
+            if key != 'userData':
+                continue
+
+            j = json.loads(value)
+            for key2, value2 in j.items():
+                if key2 != 'access_token':
+                    continue
+                return value2
+    return ""
+
+
+def head():
+    driver = Firefox()
+    driver.get("https://app.rfpio.com/")
+
+    # load cookies
+    cookies = pickle.load(open("cookies.pkl", "rb"))
+    for cookie in cookies:
+        driver.add_cookie(cookie)
+    # load local storage
+    storage = ls.LocalStorage(driver)
+    with open('local_storage.json', 'r') as f:
+        print("local storage")
+        for key, value in json.load(f).items():
+            print(key, value)
+            storage[key] = value
 
     driver.get(
         "https://app.rfpio.com/v2/content-library/library?currentTab=LIBRARY&companyId=5c588363c51a59041a54cf02")
 
-    results = wait.until(EC.element_to_be_clickable((By.ID, 'search_text')))
-    input = driver.find_element(By.ID, "search_text")
-    input.send_keys('Flow mode' + Keys.ENTER)
-
-    time.sleep(10)
+    time.sleep(1200)
 
     # print("res:", res)
 
@@ -105,5 +145,146 @@ def login():
     log.info(f'Found {count} total')
 
 
+def headless():
+    options = Options()
+    options.add_argument("-headless")
+    driver = Firefox(options=options)
+
+    driver.get("https://app.rfpio.com/")
+
+    # load cookies
+    cookies = pickle.load(open("cookies.pkl", "rb"))
+    for cookie in cookies:
+        driver.add_cookie(cookie)
+
+    query = {
+        "term": "Flow mode",
+        "additionalUIParams": {},
+        "additionalQueries": {},
+        "businessUnits": [],
+        "lastUpdateFromDate": None,
+        "lastUpdateToDate": None,
+        "createdFromDate": None,
+        "createdToDate": None,
+        "lastUsedFromDate": None,
+        "lastUsedToDate": None,
+        "lastReviewedFromDate": None,
+        "lastReviewedToDate": None,
+        "deletedFromDate": None,
+        "deletedToDate": None,
+        "cursor": None,
+        "usedCountFrom": "",
+        "usedCountTo": "",
+        "standardResponse": [],
+        "hasAttachments": "",
+        "collectionList": [],
+        "offset": 0,
+        "limit": 25,
+        "facet": "true",
+        "tagSearchOption": "ANY",
+        "collectionSearchOption": "ANY",
+        "importFileNameSearchList": [],
+        "fileSourceList": [],
+        "tagSearch": [],
+        "documentTypeSearch": [],
+        "excludeTagSearch": [],
+        "projectSearch": [],
+        "sectionSearch": [],
+        "fields": [],
+        "boostQuerys": [],
+        "owners": [],
+        "approvers": [],
+        "fromDate": None,
+        "toDate": None,
+        "includeFollowUp": False,
+        "viewPending": False,
+        "starRating": 0,
+        "sortKey": "score desc",
+        "editOnly": False,
+        "skipQuery": [],
+        "reviewFlag": "",
+        "hasFlag": "",
+        "flagList": [],
+        "flagSearchOption": "ANY",
+        "contentUsed": "",
+        "secondarySearchText": "",
+        "updatedByList": [],
+        "reviewStatus": "",
+        "hasImages": False,
+        "score": 0,
+        "hasOpenComments": False,
+        "commentMention": [],
+        "recommendationSearch": False,
+        "offlineSearch": False,
+        "backUp": False,
+        "sourceList": [],
+        "filterBusinessUnits": "",
+        "languageSearch": [],
+        "responseHeaders": [],
+        "linkId": "",
+        "hasRelatedContent": False,
+        "savedSearchId": "",
+        "hasAlertText": "",
+        "idsList": [],
+        "excludeIds": False,
+        "partnerSearch": False,
+        "maxContentScore": "",
+        "minContentScore": "",
+        "source": "CONTENT_LIBRARY",
+        "alBackUpSearch": False,
+        "translatedJobName": [],
+        "translatedBy": [],
+        "translatedFromLanguage": [],
+        "languageReviewers": [],
+        "statusFilter": "ACTIVE",
+        "reviewFilter": "ALL",
+        "reviewersPending": [],
+        "reviewersCompleted": [],
+        "secondarySearchFields": [],
+        "hasLinkedContent": False,
+        "relatedTo": [],
+        "alReviewers": [],
+        "hasOnDemandReview": "",
+        "hasDocumentReview": "",
+        "deletedByList": [],
+        "previousState": "",
+        "teamsField": "",
+        "facetFields": [],
+        "internalCodeSearch": False,
+        "additionalMap": {},
+        "customFields": {},
+        "contentTypeFilterList": [
+            "ANSWER",
+            "DOCUMENT"
+        ],
+        "filterCount": 1,
+        "resultantCount": 0,
+        "ansLibUsedTypes": [],
+        "createdByList": [],
+        "minStarRating": 0,
+        "maxStarRating": 5,
+        "ownersSearchOption": "ANY",
+        "approversSearchOption": "ANY",
+        "createdBySearchOption": "ANY",
+        "createDateOption": "RANGE",
+        "dueDateOption": "RANGE",
+        "updateDateOption": "RANGE",
+        "lastUsedDateOption": "RANGE",
+        "reviewedDateOption": "RANGE",
+        "myFavoritesUsers": "",
+        "dueDateSkipCount": 0,
+        "excludeRetainContent": False,
+        "alertTextTerm": ""
+    }
+
+    response = driver.request(
+        'POST', 'https://app.rfpio.com/rfpserver/content-library/search', json=query, headers={'Authorization': f'Bearer {access_token}'})
+    _j = json.loads(response.text)
+    print(json.dumps(_j, indent=4, sort_keys=True))
+
+    driver.close()
+
+
 if __name__ == '__main__':
-    login()
+    access_token = get_token()
+    head()
