@@ -3,47 +3,26 @@ import os
 import pickle
 import json
 import time
+import sys
 
-import requests
 from seleniumrequests import Firefox
-# from seleniumrequests import Chrome
-from selenium.webdriver.common.by import By
+from langchain.tools import BaseTool
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.firefox.options import Options
-import local_storage as ls
+import tools.local_storage as ls
 
 log = logging.getLogger(__name__)
 TOKEN = ""
-COOKIES_FILE = 'cookies.pkl'
-LOCAL_STORAGE_FILE = 'local_storage.json'
 
+TMP_FOLDER = 'tmp'
+COOKIES_FILENAME = 'cookies.pkl'
+LOCAL_STORAGE_FILENAME = 'local_storage.json'
+TEST_SAMPLE_FILENAME = 'test_sample.json'
 
-def get_reponses(s: requests.Session):
-    url = 'https://app.rfpio.com/rfpserver/ext/v1/content-lib/search?companyId=5c588363c51a59041a54cf02'
-    json = {
-        'limit': 50,
-        'metadata': True
-    }
-    cursor = None
-    while True:
-        response = s.post(url, json=json)
-        response.raise_for_status()
-        payload = response.json()
-        yield from payload.get('results', {})
-        new_cursor = payload.get('nextCursorMark')
-        if new_cursor == cursor:
-            log.info('Duplicate cursor, quitting...')
-            break
-        cursor = new_cursor
-        if cursor:
-            log.debug(f'Cursor is now {cursor}')
-            json.update({
-                'cursor': cursor
-            })
-        else:
-            break
+COOKIES_PATH = os.path.join(TMP_FOLDER, COOKIES_FILENAME)
+LOCAL_STORAGE_PATH = os.path.join(TMP_FOLDER, LOCAL_STORAGE_FILENAME)
+TEST_SAMPLE_PATH = os.path.join(TMP_FOLDER, TEST_SAMPLE_FILENAME)
 
 
 def login():
@@ -58,24 +37,25 @@ def login():
     results = wait.until(EC.url_to_be(
         "https://app.rfpio.com/#/my-work?companyId=5c588363c51a59041a54cf02"))
     cookies = driver.get_cookies()
-    pickle.dump(cookies, open(COOKIES_FILE, "wb"))
+    pickle.dump(cookies, open(COOKIES_PATH, "wb"))
 
     # save local storage
     storage = ls.LocalStorage(driver)
-    with open(LOCAL_STORAGE_FILE, 'w') as f:
+    with open(TEST_SAMPLE_PATH, 'w') as f:
         json.dump(storage.items(), f)
 
     # close head browser
     driver.close()
 
 
+# get token from local storage when logged in
 def get_token() -> str:
-    if not os.path.exists(COOKIES_FILE) or not os.path.exists(LOCAL_STORAGE_FILE):
+    if not os.path.exists(COOKIES_PATH) or not os.path.exists(TEST_SAMPLE_PATH):
         login()
     else:
-        log.info('> Token found')
+        log.info('> Previous session found, loading token')
 
-    with open(LOCAL_STORAGE_FILE, 'r') as f:
+    with open(TEST_SAMPLE_PATH, 'r') as f:
         j = json.load(f)
         for key, value in j.items():
             if key != 'userData':
@@ -89,7 +69,8 @@ def get_token() -> str:
     return ""
 
 
-def head():
+def get_reponses_head():
+    # head browser for testing
     driver = Firefox()
     driver.get("https://app.rfpio.com/")
 
@@ -108,44 +89,14 @@ def head():
     driver.get(
         "https://app.rfpio.com/v2/content-library/library?currentTab=LIBRARY&companyId=5c588363c51a59041a54cf02")
 
-    time.sleep(1200)
-
-    # print("res:", res)
+    time.sleep(360)
 
     driver.close()
     exit(0)
 
-    count = 0
-    answer_records = []
 
-    for answer in get_reponses(s):
-        answer_id = answer.get('id')
-        log.debug(f'Found answer {answer_id}')
-        answer_records.append({
-            'id': answer_id,
-            'company_id': answer.get('companyId'),
-            'question': answer.get('question'),
-            'tags': ' / '.join(answer.get('tags', [])),
-            'used_count': answer.get('numUsed'),
-            'content_score': answer.get('contentScore'),
-            'star_rating': answer.get('starRating'),
-            'updated_date': answer.get('updateDate'),
-            'updated_by': answer.get('updateBy'),
-            'status': answer.get('status'),
-            'last_used_date': answer.get('lastUsedDate'),
-            'reviewed': answer.get('reviewed'),
-            'needs_review': answer.get('needReview'),
-            'review_flag': answer.get('reviewFlag'),
-            'review_status': answer.get('reviewStatus')
-        })
-        count += 1
-        if len(answer_records) > 99:
-            log.info(f'Found {count} answers so far')
-
-    log.info(f'Found {count} total')
-
-
-def headless():
+def get_reponses(_token: str, query: str, product_tags: list) -> list:
+    log.info(f'> Searching for "{query}" with tags {product_tags}')
     options = Options()
     options.add_argument("-headless")
     driver = Firefox(options=options)
@@ -157,10 +108,12 @@ def headless():
     for cookie in cookies:
         driver.add_cookie(cookie)
 
-    query = {
-        "term": "Flow mode",
+    limit = 5  # number of results
+
+    data = {
+        "term": query,
         "additionalUIParams": {},
-        "additionalQueries": {},
+        "additionalQueries": {"content_type": ["ANSWER"], "tags": product_tags},
         "businessUnits": [],
         "lastUpdateFromDate": None,
         "lastUpdateToDate": None,
@@ -179,7 +132,7 @@ def headless():
         "hasAttachments": "",
         "collectionList": [],
         "offset": 0,
-        "limit": 25,
+        "limit": limit,
         "facet": "true",
         "tagSearchOption": "ANY",
         "collectionSearchOption": "ANY",
@@ -190,7 +143,7 @@ def headless():
         "excludeTagSearch": [],
         "projectSearch": [],
         "sectionSearch": [],
-        "fields": [],
+        "fields": ["question", "alternate_questions"],
         "boostQuerys": [],
         "owners": [],
         "approvers": [],
@@ -253,15 +206,12 @@ def headless():
         "internalCodeSearch": False,
         "additionalMap": {},
         "customFields": {},
-        "contentTypeFilterList": [
-            "ANSWER",
-            "DOCUMENT"
-        ],
-        "filterCount": 1,
+        "contentTypeFilterList": ["ANSWER"],
+        "filterCount": 4,
         "resultantCount": 0,
         "ansLibUsedTypes": [],
         "createdByList": [],
-        "minStarRating": 0,
+        "minStarRating": 2,
         "maxStarRating": 5,
         "ownersSearchOption": "ANY",
         "approversSearchOption": "ANY",
@@ -278,13 +228,96 @@ def headless():
     }
 
     response = driver.request(
-        'POST', 'https://app.rfpio.com/rfpserver/content-library/search', json=query, headers={'Authorization': f'Bearer {access_token}'})
-    _j = json.loads(response.text)
-    print(json.dumps(_j, indent=4, sort_keys=True))
-
+        'POST', 'https://app.rfpio.com/rfpserver/content-library/search', json=data, headers={'Authorization': f'Bearer {_token}'})
+    if response.status_code != 200:
+        log.error(
+            f'Error searching for "{query}" with tags {product_tags}, status code {response.status_code}')
     driver.close()
+
+    _j = json.loads(response.text)
+    _j["term"] = query
+    with open(TEST_SAMPLE_PATH, 'w') as f:
+        json.dump(_j, f)
+
+    return _j["results"]
+
+
+def strip_html_tags(text: str) -> str:
+    """Remove html tags from a string"""
+    import re
+    clean = re.compile('<.*?>')
+    return re.sub(clean, '', text)
+
+
+def format_response(results: list) -> list[str]:
+    res = []
+    for r in results:
+        for a in r['answers']:
+            if a['type'] == 'RICH_TEXT':
+                answer = strip_html_tags(a['value'])
+            else:
+                answer = a['value']
+            answer = a['key'] + ': ' + answer
+            res.append(answer)
+    return res
+
+
+class RFPIO(BaseTool):
+    """Use RFPio to search for answers."""
+    name = "RFPio Search"
+    description = "Use this more than the normal search if the question is about Fortinet products. The input to this tool should start with the name of the Fortinet Product (no abbreviation) then a comma then the query. For example, `FortiGate,SD-WAN` would be the input if you wanted to search how SD-WAN works on Fortigate."
+
+    def __init__(self, *args, **kwargs):
+        """Initialize the tool."""
+        super().__init__(*args, **kwargs)
+
+    def _run(self, query: str) -> str:
+        """Use the tool."""
+        access_token = get_token()
+
+        product, terms = query.split(",")
+        product_tags = [product]
+
+        results = get_reponses(access_token, terms, product_tags)
+        results = format_response(results)
+
+        output = ""
+        # merge results
+        for r in results:
+            output += r + "\n"
+
+        return output
+
+    async def _arun(self, query: str) -> str:
+        """Use the tool asynchronously."""
+        raise NotImplementedError("RFPio does not support async")
 
 
 if __name__ == '__main__':
     access_token = get_token()
-    head()
+
+    if len(sys.argv) < 2:
+        print("Please provide a query")
+        sys.exit(1)
+
+    query = sys.argv[1]
+    product_tags = []
+
+    if query == "test":
+        get_reponses_head()
+
+    results = []
+    if os.path.exists(TEST_SAMPLE_PATH):
+        with open(TEST_SAMPLE_PATH, 'r') as f:
+            _j = json.load(f)
+            if 'term' in _j and _j['term'] == query:
+                results = _j['results']
+    if results == []:
+        results = get_reponses(access_token, query, product_tags)
+
+    results = format_response(results)
+    output = ""
+    # merge results
+    for r in results:
+        output += r + "\n"
+    print(output)
