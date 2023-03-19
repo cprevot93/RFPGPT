@@ -9,38 +9,51 @@ from langchain import ConversationChain, LLMChain
 from langchain.agents import initialize_agent, load_tools, Tool
 from langchain.chains.conversation.memory import ConversationBufferMemory
 from langchain.llms import OpenAI
+from langchain.chat_models import ChatOpenAI
 from langchain.prompts import PromptTemplate
+from langchain.prompts.chat import (
+    ChatPromptTemplate,
+    HumanMessagePromptTemplate,
+    SystemMessagePromptTemplate,
+)
 from openai.error import (AuthenticationError, InvalidRequestError,
                           RateLimitError)
 from tools.rfpio import RFPIO
 
-log = logging.getLogger(__name__)
+log = logging.getLogger()
 
 os.environ["OPENAI_API_KEY"] = "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"
 os.environ["SERPAPI_API_KEY"] = "9ded0c35cb5f9933a84c7bb93ee17514de7bd01582c5a111474f464e35631623"
 
-MAX_TOKENS = 512
-TOOLS = ["serpapi", "llm-math"]
+MAX_TOKENS = 2000
+TOOLS = ["serpapi"]
+LLM_TOOLS = ["llm-math"]
 
-PROMPT_TEMPLATE = PromptTemplate(
+
+FINAL_PROMPT_TEMPLATE = ChatPromptTemplate(
     input_variables=["original_words", "num_words", "translate_to"],
-    template="Restate {num_words}{translate_to}the following: \n{original_words}\n",
+    messages=[
+        SystemMessagePromptTemplate.from_template(
+            "You are a helpful pre-sales network & security engineer assistant, working at Fortinet. \
+Use English technical terms in any language like 'MSSP' or 'VNP'."),
+        HumanMessagePromptTemplate.from_template(
+            "Restate {translate_to} {num_words} the following:\n{original_words}\n\n"),
+    ]
 )
 
 
-def load_chain(tools_name, llm, agent="zero-shot-react-description", verbose=False):
+def load_chain(tools_name, chat_llm, llm, agent="chat-zero-shot-react-description", verbose=False):
     chain = None
     express_chain = None
-    if llm:
-        log.info("\ntools_list:", tools_name)
-        tools = load_tools(tools_name, llm)
-        tools.append(RFPIO())
+    log.info("\ntools_list:", tools_name)
+    tools = load_tools(tools_name)
+    tools.append(RFPIO())
 
-        # memory = ConversationBufferMemory(memory_key="chat_history")
+    # memory = ConversationBufferMemory(memory_key="chat_history")
 
-        chain = initialize_agent(tools, llm, agent=agent, verbose=verbose)
-        express_chain = LLMChain(
-            llm=llm, prompt=PROMPT_TEMPLATE, verbose=verbose)
+    chain = initialize_agent(tools, chat_llm, agent=agent, verbose=verbose)
+    express_chain = LLMChain(
+        llm=chat_llm, prompt=FINAL_PROMPT_TEMPLATE, verbose=verbose)
 
     return chain, express_chain
 
@@ -48,13 +61,13 @@ def load_chain(tools_name, llm, agent="zero-shot-react-description", verbose=Fal
 def transform_text(desc, express_chain, num_words=0, translate_to=""):
     num_words_prompt = ""
     if num_words and int(num_words) != 0:
-        num_words_prompt = "using up to " + str(num_words) + " words, "
+        num_words_prompt = "using up to " + str(num_words) + " words"
 
     translate_to_str = ""
     if translate_to != "":
         if translate_to == "auto":
             translate_to = get_language(desc)
-        translate_to_str = "translated to " + translate_to + ", "
+        translate_to_str = f"in {translate_to}"
 
     trans_instr = num_words_prompt + translate_to_str
     if express_chain and len(trans_instr.strip()) > 0:
@@ -102,7 +115,10 @@ def get_language(text: str) -> str:
 
 def question(input: str, product: str = ""):
     llm = OpenAI(temperature=0, max_tokens=MAX_TOKENS, client=None)
-    chain, express_chain = load_chain(TOOLS, llm, verbose=True)
+    chat_llm = ChatOpenAI(client=None, model_kwargs={"temperature": 0})
+# , "messages": [{"role": "system", "content": "You are a helpful Pre-sales network & security Engineer assistant, working at Fortinet. \
+# Use English technical terms in any language. "}]},)
+    chain, express_chain = load_chain(TOOLS, chat_llm, llm, verbose=True)
 
     if chain:
         output = run_chain(chain, input)
