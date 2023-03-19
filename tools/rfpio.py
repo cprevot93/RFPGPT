@@ -10,7 +10,7 @@ from langchain.tools import BaseTool
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.firefox.options import Options
-import tools.local_storage as ls
+from .helpers import http_local_storage as ls
 
 log = logging.getLogger(__name__)
 TOKEN = ""
@@ -41,7 +41,7 @@ def login():
 
     # save local storage
     storage = ls.LocalStorage(driver)
-    with open(TEST_SAMPLE_PATH, 'w') as f:
+    with open(LOCAL_STORAGE_PATH, 'w') as f:
         json.dump(storage.items(), f)
 
     # close head browser
@@ -50,12 +50,12 @@ def login():
 
 # get token from local storage when logged in
 def get_token() -> str:
-    if not os.path.exists(COOKIES_PATH) or not os.path.exists(TEST_SAMPLE_PATH):
+    if not os.path.exists(COOKIES_PATH) or not os.path.exists(LOCAL_STORAGE_PATH):
         login()
     else:
         log.info('> Previous session found, loading token')
 
-    with open(TEST_SAMPLE_PATH, 'r') as f:
+    with open(LOCAL_STORAGE_PATH, 'r') as f:
         j = json.load(f)
         for key, value in j.items():
             if key != 'userData':
@@ -75,13 +75,13 @@ def get_reponses_head():
     driver.get("https://app.rfpio.com/")
 
     # load cookies
-    cookies = pickle.load(open("cookies.pkl", "rb"))
+    cookies = pickle.load(open(COOKIES_PATH, "rb"))
     for cookie in cookies:
         driver.add_cookie(cookie)
     # load local storage
     storage = ls.LocalStorage(driver)
-    with open('local_storage.json', 'r') as f:
-        print("local storage")
+    with open(LOCAL_STORAGE_PATH, 'r') as f:
+        print("> Loading local storage")
         for key, value in json.load(f).items():
             print(key, value)
             storage[key] = value
@@ -104,7 +104,7 @@ def get_reponses(_token: str, query: str, product_tags: list) -> list:
     driver.get("https://app.rfpio.com/")
 
     # load cookies
-    cookies = pickle.load(open("cookies.pkl", "rb"))
+    cookies = pickle.load(open(COOKIES_PATH, "rb"))
     for cookie in cookies:
         driver.add_cookie(cookie)
 
