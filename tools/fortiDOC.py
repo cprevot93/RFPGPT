@@ -1,11 +1,10 @@
 import logging
 import os
 import json
-import time
 import sys
 import requests
+from bs4 import BeautifulSoup as bs
 
-from seleniumrequests import Firefox
 from langchain.tools import BaseTool
 
 log = logging.getLogger(__name__)
@@ -18,53 +17,116 @@ if os.path.exists(TMP_FOLDER) is False:
 TEST_SAMPLE_FILENAME = 'docs_test_sample.json'
 TEST_SAMPLE_PATH = os.path.join(TMP_FOLDER, TEST_SAMPLE_FILENAME)
 
+API_PRODUCT_LIST_URL = 'https://docs.fortinet.com/api/products'
+API_PRODUCT_LIST_FILENAME = 'docs_api_product_list.json'
+API_PRODUCT_LIST_PATH = os.path.join(TMP_FOLDER, API_PRODUCT_LIST_FILENAME)
 
-def get_product_id(product: str) -> str:
+
+def _get_product_id(product: str) -> str:
     """
     Return dynamic product id with product name for the API
     """
-    url = "https://docs.fortinet.com/api/products"
-    response = requests.get(url)
-    if response.status_code != 200:
-        log.error(f'Error getting product id for {product}')
-        return ""
-    _j = json.loads(response.text)
-    for p in _j:
-        if p["title"].lower() == product.lower():
-            return p["id"]
+    if not os.path.exists(API_PRODUCT_LIST_PATH):
+        response = requests.get(API_PRODUCT_LIST_URL)
+        if response.status_code != 200:
+            log.error(f'Error getting product id for {product}')
+            return ""
+        _j = json.loads(response.text)
+
+        # save product list to file
+        with open(API_PRODUCT_LIST_PATH, 'w') as f:
+            json.dump(_j, f)
+    else:
+        # load product list from file
+        with open(API_PRODUCT_LIST_PATH, 'r') as f:
+            _j = json.load(f)
+
+    for index, obj in _j.items():
+        if obj["slug"].lower() == product.lower():
+            return obj["id"]
+    return ""
 
 
-def get_reponses(_token: str, query: str, product_tags: list) -> list:
-    log.info(f'> Searching for "{query}" with tags {product_tags}')
-    options = Options()
-    options.add_argument("-headless")
-    driver = Firefox(options=options)
+def _get_query(query: str, product_tag: str) -> list:
+    log.info(
+        f'> Searching "{query}" for product {product_tag} on docs.fortinet.com')
 
-    driver.get("https://app.rfpio.com/")
+    product_id = "" if product_tag == "" else _get_product_id(product_tag)
+    url = f"https://docs.fortinet.com/search2?q={query}"
+    if product_id != "":
+        url += f"&product={product_id}"
 
-    # load cookies
-    cookies = pickle.load(open(COOKIES_PATH, "rb"))
-    for cookie in cookies:
-        driver.add_cookie(cookie)
+    log.debug(f'URL search: {url}')
+    try:
+        response = requests.get(url)
+        _j = json.loads(response.text)
+    except Exception as e:
+        log.error(f'Error: {e.args}')
+        if response.text:
+            print(response.text)
+        return []
 
-    data = {}
-
-    response = driver.request(
-        'POST', 'https://app.rfpio.com/rfpserver/content-library/search', json=data, headers={'Authorization': f'Bearer {_token}'})
-    driver.close()
-
-    if response.status_code == 403:
-        login()
-    elif response.status_code != 200:
-        log.error(
-            f'Error searching for "{query}" with tags {product_tags}, status code {response.status_code}')
-
-    _j = json.loads(response.text)
-    _j["term"] = query
+    res = {
+        "query": query,
+        "product_tag": product_tag,
+        "results": _j
+    }
     with open(TEST_SAMPLE_PATH, 'w') as f:
-        json.dump(_j, f)
+        json.dump(res, f)
 
-    return _j["results"]
+    return _j
+
+
+def _construct_url(result: dict) -> str:
+    """
+    Construct the URL for the result
+    """
+    result = result['content']
+    # get the more recent version
+
+    def versiontuple(v: str):
+        return tuple(map(int, (v.split("."))))
+
+    most_recent_version = result['versions'][0]
+    for _v in result['versions']:
+        if versiontuple(_v['version']['version']) > versiontuple(most_recent_version['version']['version']):
+            most_recent_version = _v
+
+    return f"https://docs.fortinet.com/document/{result['product']['slug']}/{most_recent_version['version']['version']}/{most_recent_version['document']['slug']}/{most_recent_version['page']['permanent_id']}/{most_recent_version['page']['slug']}"
+
+
+def _extract_content(html: str) -> str:
+    """
+    Extract the main content from the html
+    """
+    if html is None:
+        raise Exception('No html')
+
+    soup = bs(html, 'html.parser')
+    main_content = soup.find('div', id='mc-main-content')
+
+    if main_content is None:
+        raise Exception('No main content found')
+
+    # replace <li> with '- '
+
+    return main_content.get_text()
+
+
+def get_first_result(query: str, product_tag: str) -> str:
+    """
+    Return the first result for the query
+    """
+    results = _get_query(query, product_tag)
+    if len(results) == 0:
+        return ""
+
+    try:
+        url = _construct_url(results[0])
+        content = requests.get(url)
+        return _extract_content(content.text)
+    except Exception as e:
+        log.error(f'Error: {e.args}')
 
 
 def strip_html_tags_and_url(text: str) -> str:
@@ -92,10 +154,11 @@ def format_response(results: list) -> list[str]:
     return res
 
 
-class SearchTicket(BaseTool):
-    """Use SearchTicket to search for previous ticket support."""
-    name = "Support Ticket Search"
-    description = "Use this more than the normal search if the question is about Fortinet product troobleshooting. The input to this tool should start with the name of the Fortinet Product (no abbreviation) then a comma then the query. For example, `FortiGate,SD-WAN` would be the input if you wanted to search how SD-WAN works on Fortigate."
+class FortiDOC(BaseTool):
+    """Use FortiDOC to search in Fortinet Docs database."""
+    name = "Fortinet DOCS search"
+    description = "Use this more than the normal search if you need to search about a feature in a Fortinet product or if the question is about Fortinet product configuration. \
+The input to this tool should start with the name of the Fortinet Product (no abbreviation) then a comma then the query. For example, `FortiGate,SD-WAN` would be the input if you wanted to search how SD-WAN works on Fortigate."
 
     def __init__(self, *args, **kwargs):
         """Initialize the tool."""
@@ -108,7 +171,7 @@ class SearchTicket(BaseTool):
         product, terms = query.split(",")
         product_tags = [product]
 
-        results = get_reponses(access_token, terms, product_tags)
+        results = _get_query(access_token, terms, product_tags)
         results = format_response(results)
 
         output = ""
@@ -128,15 +191,32 @@ if __name__ == '__main__':
         print("Please provide a query")
         sys.exit(1)
 
-    query = sys.argv[1]
-    product_tags = []
-    product_version = ""
+    # arvg parsing with argparse
+    import argparse
+    parser = argparse.ArgumentParser(
+        prog='FortiDOC',
+        description='Search in Fortinet Docs database',
+    )
+    parser.add_argument("-q", "--query", help="Query to search for")
+    parser.add_argument("-p", "--product",
+                        help="Fortinet product to search for")
+    parser.add_argument("-v", "--verbose",
+                        action='store_true', help="Verbose mode")
+    args = parser.parse_args()
 
-    results = []
-    results = get_reponses(access_token, query, product_tags)
-    results = format_response(results)
-    output = ""
-    # merge results
-    for r in results:
-        output += r + "\n"
-    print(output)
+    if args.verbose:
+        logging.basicConfig(level=logging.DEBUG)
+    else:
+        logging.basicConfig(level=logging.INFO)
+
+    product = ""
+    if args.product:
+        product = args.product
+
+    if not args.query:
+        # return product id
+        print(_get_product_id(product))
+    else:
+        first = get_first_result(args.query, product)
+        print(first)
+        # results = format_response(results)

@@ -3,3 +3,4 @@ openai
 langchain
 selenium
 selenium-requests
+beautifulsoup4

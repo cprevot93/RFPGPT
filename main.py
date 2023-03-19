@@ -18,7 +18,7 @@ from langchain.prompts.chat import (
 )
 from openai.error import (AuthenticationError, InvalidRequestError,
                           RateLimitError)
-from tools.rfpio import RFPIO
+from tools import RFPIO
 
 log = logging.getLogger()
 
