@@ -12,13 +12,17 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.firefox.options import Options
 from .helpers import http_local_storage as ls
 
-log = logging.getLogger(__name__)
+log = logging.getLogger()
 TOKEN = ""
 
 TMP_FOLDER = 'tmp'
-COOKIES_FILENAME = 'cookies.pkl'
-LOCAL_STORAGE_FILENAME = 'local_storage.json'
-TEST_SAMPLE_FILENAME = 'test_sample.json'
+# create tmp folder if not exists
+if os.path.exists(TMP_FOLDER) is False:
+    os.mkdir(TMP_FOLDER)
+
+COOKIES_FILENAME = 'rfpio_cookies.pkl'
+LOCAL_STORAGE_FILENAME = 'rfpio_local_storage.json'
+TEST_SAMPLE_FILENAME = 'rfpio_test_sample.json'
 
 COOKIES_PATH = os.path.join(TMP_FOLDER, COOKIES_FILENAME)
 LOCAL_STORAGE_PATH = os.path.join(TMP_FOLDER, LOCAL_STORAGE_FILENAME)
@@ -69,6 +73,69 @@ def get_token() -> str:
     return ""
 
 
+def normalize_product_tags(tags: list) -> list:
+    """
+    Normalize product tags to match RFPio tags:
+    FortiGate
+    FortiAP
+    FortiNac
+    FortiWeb
+    FortiManager
+    FortiMail
+    FortiSIEM
+    FortiCNP
+    FortiAuthenticator
+    FortiMonitor
+    FortiSOAR
+    FortiSASE
+    FortiAnalyzer
+    FortiClient
+    FortiToken
+    FortiDDos
+    FortiExtender
+    """
+    res_list = []
+    for t in tags:
+        match t.lower():
+            case 'fortigate':
+                res_list.append('FortiGate')
+            case 'fortiap':
+                res_list.append('FortiAP')
+            case 'fortinac':
+                res_list.append('FortiNac')
+            case 'fortiweb':
+                res_list.append('FortiWeb')
+            case 'fortimanager':
+                res_list.append('FortiManager')
+            case 'fortimail':
+                res_list.append('FortiMail')
+            case 'fortisiem':
+                res_list.append('FortiSIEM')
+            case 'forticnp':
+                res_list.append('FortiCNP')
+            case 'fortiauthenticator':
+                res_list.append('FortiAuthenticator')
+            case 'fortimonitor':
+                res_list.append('FortiMonitor')
+            case 'fortisoar':
+                res_list.append('FortiSOAR')
+            case 'fortisase':
+                res_list.append('FortiSASE')
+            case 'fortianalyzer':
+                res_list.append('FortiAnalyzer')
+            case 'forticlient':
+                res_list.append('FortiClient')
+            case 'fortitoken':
+                res_list.append('FortiToken')
+            case 'fortiddos':
+                res_list.append('FortiDDos')
+            case 'fortiextender':
+                res_list.append('FortiExtender')
+            case '_':
+                pass
+    return res_list
+
+
 def get_reponses_head():
     # head browser for testing
     driver = Firefox()
@@ -96,14 +163,17 @@ def get_reponses_head():
 
 
 def get_reponses(_token: str, query: str, product_tags: list) -> list:
+    """
+    RFPIO API call
+    """
+    product_tags = normalize_product_tags(product_tags)
     log.info(f'> Searching for "{query}" with tags {product_tags}')
     options = Options()
     options.add_argument("-headless")
     driver = Firefox(options=options)
 
-    driver.get("https://app.rfpio.com/")
-
     # load cookies
+    driver.get("https://app.rfpio.com/")  # required to load cookies
     cookies = pickle.load(open(COOKIES_PATH, "rb"))
     for cookie in cookies:
         driver.add_cookie(cookie)
@@ -229,16 +299,22 @@ def get_reponses(_token: str, query: str, product_tags: list) -> list:
 
     response = driver.request(
         'POST', 'https://app.rfpio.com/rfpserver/content-library/search', json=data, headers={'Authorization': f'Bearer {_token}'})
-    if response.status_code != 200:
-        log.error(
-            f'Error searching for "{query}" with tags {product_tags}, status code {response.status_code}')
     driver.close()
 
+    if response.status_code == 403:
+        login()
+    elif response.status_code != 200:
+        log.error(
+            f'Error searching for "{query}" with tags {product_tags}, status code {response.status_code}')
+
     _j = json.loads(response.text)
-    _j["term"] = query
+    _j["query"] = data
     with open(TEST_SAMPLE_PATH, 'w') as f:
         json.dump(_j, f)
 
+    if _j['totalRecords'] == 0:
+        log.info(f'No results found for "{query}" with tags {product_tags}')
+        return [""]
     return _j["results"]
 
 
@@ -263,9 +339,9 @@ def format_response(results: list) -> list[str]:
 
 
 class RFPIO(BaseTool):
-    """Use RFPio to search for answers."""
+    """Use RFPio to search for answers for Fortinet product."""
     name = "RFPio Search"
-    description = "Use this more than the normal search if the question is about Fortinet products. The input to this tool should start with the name of the Fortinet Product (no abbreviation) then a comma then the query. For example, `FortiGate,SD-WAN` would be the input if you wanted to search how SD-WAN works on Fortigate."
+    description = "Use this in addition to the normal search if the question pertains to in-depth Fortinet product functionalities. Inputs of this tool should start with Fortinet product name (no abbreviation) followed by a comma then the query. For example, `FortiGate,SD-WAN routing` would be the input if you wanted to search for SD-WAN on Fortigate."
 
     def __init__(self, *args, **kwargs):
         """Initialize the tool."""
@@ -276,9 +352,9 @@ class RFPIO(BaseTool):
         access_token = get_token()
 
         product, terms = query.split(",")
-        product_tags = [product]
+        product_tags = [product.strip()]
 
-        results = get_reponses(access_token, terms, product_tags)
+        results = get_reponses(access_token, terms.strip(), product_tags)
         results = format_response(results)
 
         output = ""
