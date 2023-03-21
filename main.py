@@ -10,8 +10,8 @@ from langchain.chat_models import ChatOpenAI
 # from langchain.prompts.chat import ChatPromptTemplate, HumanMessagePromptTemplate, SystemMessagePromptTemplate
 from openai.error import AuthenticationError, InvalidRequestError, RateLimitError
 
-from agent.CustomAgent import AgentExecutorContext
-from tools import RFPIO, FortiDOC
+from lib.custom_agent import AgentExecutorContext
+from lib import RFPIO, FortiDOC
 
 log = logging.getLogger()
 
@@ -32,9 +32,9 @@ def load_agent(tools_name, chat_llm, verbose=False):
     memory = ConversationBufferMemory(memory_key="chat_history", return_messages=True)
 
     agent = ConversationalChatAgent.from_llm_and_tools(chat_llm, tools, memory=memory,
-                                                       system_message="You are a helpful pre-sales network & security engineer assistant, working at Fortinet. Use English technical terms in any language like 'MSSP' or 'VNP'.")
+                                                       system_message="You are a helpful pre-sales network & security engineer assistant, working at Fortinet. Use English technical terms in any language like 'MSSP' or 'VNP'. Reply in the same language as the question.")
 
-    return AgentExecutor.from_agent_and_tools(agent=agent, tools=tools, verbose=verbose, memory=memory)
+    return AgentExecutorContext.from_agent_and_tools(agent=agent, tools=tools, verbose=verbose, memory=memory)
 
 
 def run_chain(chain, inp):
