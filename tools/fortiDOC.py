@@ -3,7 +3,9 @@ import os
 import json
 import sys
 import requests
-from bs4 import BeautifulSoup as bs
+import re
+from bs4 import BeautifulSoup as bs, Tag, NavigableString
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 from langchain.tools import BaseTool
 
@@ -22,14 +24,14 @@ API_PRODUCT_LIST_FILENAME = 'docs_api_product_list.json'
 API_PRODUCT_LIST_PATH = os.path.join(TMP_FOLDER, API_PRODUCT_LIST_FILENAME)
 
 
-def _get_product_id(product: str) -> str:
+def _get_product_id(product_name: str) -> str:
     """
     Return dynamic product id with product name for the API
     """
     if not os.path.exists(API_PRODUCT_LIST_PATH):
-        response = requests.get(API_PRODUCT_LIST_URL)
+        response = requests.get(API_PRODUCT_LIST_URL, timeout=10)
         if response.status_code != 200:
-            log.error(f'Error getting product id for {product}')
+            log.error('Error getting product id for %s', product_name)
             return ""
         _j = json.loads(response.text)
 
@@ -42,7 +44,7 @@ def _get_product_id(product: str) -> str:
             _j = json.load(f)
 
     for index, obj in _j.items():
-        if obj["slug"].lower() == product.lower():
+        if obj["slug"].lower() == product_name.lower():
             return obj["id"]
     return ""
 
@@ -95,7 +97,27 @@ def _construct_url(result: dict) -> str:
     return f"https://docs.fortinet.com/document/{result['product']['slug']}/{most_recent_version['version']['version']}/{most_recent_version['document']['slug']}/{most_recent_version['page']['permanent_id']}/{most_recent_version['page']['slug']}"
 
 
-def _extract_content(html: str) -> str:
+def format_response(main_content: Union[Tag, NavigableString]) -> str:
+    """
+    Format the response into raw text
+    """
+    # replace all <li> with '-'
+    for li in main_content.find_all('li'):
+        li.replace_with(f"- {li.get_text()}")
+    # replace all <pre> with a new line
+    for pre in main_content.find_all('pre'):
+        pre.replace_with(f"\n{pre.get_text()}")
+    text = main_content.get_text()
+    # remove multiple spaces
+    clean_space_text = re.sub(' +', ' ', text).strip()
+    # remove multiple new lines
+    clean_newline_text = re.sub('\n+', '\n', clean_space_text).strip()
+    # remove newline after a list item
+    clean_newline_text = re.sub('- \n', '- ', clean_newline_text).strip()
+    return clean_newline_text
+
+
+def _extract_content(html: str) -> Union[Tag, NavigableString]:
     """
     Extract the main content from the html
     """
@@ -108,78 +130,96 @@ def _extract_content(html: str) -> str:
     if main_content is None:
         raise Exception('No main content found')
 
-    # replace <li> with '- '
-
-    return main_content.get_text()
+    return main_content
 
 
-def get_first_result(query: str, product_tag: str) -> str:
+def get_first_result(query: str, product_tag: str, raw=False) -> str:
     """
     Return the first result for the query
     """
     results = _get_query(query, product_tag)
+    content = ""
     if len(results) == 0:
-        return ""
+        return content
 
     try:
-        url = _construct_url(results[0])
-        content = requests.get(url)
-        return _extract_content(content.text)
-    except Exception as e:
-        log.error(f'Error: {e.args}')
+        url = _construct_url(results[0])  # get the first result
+        html = requests.get(url, timeout=10)
+        soup = _extract_content(html.text)
+        if raw:
+            content = str(soup)
+        else:
+            content = format_response(soup)
+    except Exception:
+        log.error('Unknown error while fetching result: ', exc_info=True)
 
-
-def strip_html_tags_and_url(text: str) -> str:
-    """Remove html tags from a string"""
-    import re
-    tags = re.compile(r'<.*?>|For more information:')
-    links = re.compile(
-        r'\(?https?:\/{2}[\d\w-]+(\.[\d\w-]+)*(?:(?:\/[^\s/]*))*\)?')
-    clean_text = re.sub(tags, ' ', text)
-    clean_text = re.sub(links, ' ', clean_text)
-    return re.sub(' +', ' ', clean_text).strip()
-
-
-def format_response(results: list) -> list[str]:
-    res = []
-    for i, r in enumerate(results):
-        for j, a in enumerate(r['answers']):
-            key = f"{a['key']}." if a['key'] != 'Response' else ""
-            if a['type'] == 'RICH_TEXT':
-                answer = strip_html_tags_and_url(a['value'])
-            else:
-                answer = a['value']
-            answer = f"Question: {strip_html_tags_and_url(r['question'])}\nResponse: {key} {answer}"
-            res.append(answer)
-    return res
+    return content
 
 
 class FortiDOC(BaseTool):
     """Use FortiDOC to search in Fortinet Docs database."""
     name = "Fortinet DOCS search"
-    description = "Use this more than the normal search if you need to search about a feature in a Fortinet product or if the question is about Fortinet product configuration. \
-The input to this tool should start with the name of the Fortinet Product (no abbreviation) then a comma then the query. For example, `FortiGate,SD-WAN` would be the input if you wanted to search how SD-WAN works on Fortigate."
+    description = """
+Use this more than the normal search if you need to search about a feature in a Fortinet product or if the question is about Fortinet product configuration.
+The input to this tool should start with the name of the Fortinet Product (no abbreviation) followed by a comma, the product current firmware version a comma finished by the query.
+The query MUST be in English. For example, `FortiGate,7.2.4,SD-WAN overview` would be the input if you want to search of a SD-WAN documentation on Fortigate in firmware version 7.2.4.
+If you don't know the product name, you can must enter 0. If you don't know the firmware version, you must enter 0. Exemple: `FortiWeb,0,Security features` or `0,7.2.4,IPsec VPN`"""
+    return_direct = False
 
     def __init__(self, *args, **kwargs):
         """Initialize the tool."""
         super().__init__(*args, **kwargs)
 
-    def _run(self, query: str) -> str:
+    # def run(
+    #     self,
+    #     tool_input: str,
+    #     verbose: Optional[bool] = None,
+    #     start_color: Optional[str] = "green",
+    #     color: Optional[str] = "green",
+    #     **kwargs: Any
+    # ) -> Tuple[str, bool]:
+    #     """Run the tool."""
+    #     if verbose is None:
+    #         verbose = self.verbose
+    #     self.callback_manager.on_tool_start(
+    #         {"name": self.name, "description": self.description},
+    #         tool_input,
+    #         verbose=verbose,
+    #         color=start_color,
+    #         **kwargs,
+    #     )
+    #     try:
+    #         observation, ask_for_context = self._run(tool_input)
+    #     except (Exception, KeyboardInterrupt) as e:
+    #         self.callback_manager.on_tool_error(e, verbose=verbose)
+    #         raise e
+    #     self.callback_manager.on_tool_end(
+    #         observation, verbose=verbose, color=color, **kwargs
+    #     )
+    #     return observation, ask_for_context
+
+    def _run(self, tool_input: str) -> str:  # Tuple[str, bool]:
         """Use the tool."""
-        access_token = get_token()
+        # check if input is a string or a dict
 
-        product, terms = query.split(",")
-        product_tags = [product]
+        if isinstance(tool_input, str):
+            product_tag, firmware_version, query = tool_input.split(",")
+        elif isinstance(tool_input, dict):  # I don't know why but the input can a dict sometimes
+            query = tool_input.get('query', '')
+            firmware_version = tool_input.get('firmware_version', '')
+            product_tag = tool_input.get('product_tag', '')
+        else:
+            raise Exception("Invalid input")
 
-        results = _get_query(access_token, terms, product_tags)
-        results = format_response(results)
+        # If the question is a context question, return True
+        if product_tag == "0":
+            return "What is the product name related to the question?"  # , True
+        if firmware_version == "0":
+            return f"What is the firmware version of the {product_tag} related to the question?"  # , True
 
-        output = ""
-        # merge results
-        for r in results:
-            output += r + "\n"
+        output = get_first_result(query.strip(), product_tag.strip())
 
-        return output
+        return output  # , self.return_direct  # default
 
     async def _arun(self, query: str) -> str:
         """Use the tool asynchronously."""
@@ -198,10 +238,9 @@ if __name__ == '__main__':
         description='Search in Fortinet Docs database',
     )
     parser.add_argument("-q", "--query", help="Query to search for")
-    parser.add_argument("-p", "--product",
-                        help="Fortinet product to search for")
-    parser.add_argument("-v", "--verbose",
-                        action='store_true', help="Verbose mode")
+    parser.add_argument("-p", "--product", help="Fortinet product to search for")
+    parser.add_argument("-r", "--raw", action='store_true', help="Don't format the response")
+    parser.add_argument("-v", "--verbose", action='store_true', help="Verbose mode")
     args = parser.parse_args()
 
     if args.verbose:
@@ -217,6 +256,6 @@ if __name__ == '__main__':
         # return product id
         print(_get_product_id(product))
     else:
-        first = get_first_result(args.query, product)
+        first = get_first_result(args.query, product, args.raw)
         print(first)
         # results = format_response(results)

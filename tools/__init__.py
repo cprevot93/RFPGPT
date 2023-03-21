@@ -1,2 +1,2 @@
-# from fortiDOC import FortiDOC
-# from rfpio import RFPIO
+from .fortiDOC import FortiDOC
+from .rfpio import RFPIO

@@ -1,84 +1,40 @@
-import datetime
 import logging
 import os
-from typing import Any, Dict, List, Optional, Tuple, Union
-import openai
-import sys
+# from typing import Any, Dict, List, Optional, Tuple, Union
 
-from langchain import ConversationChain, LLMChain
-from langchain.agents import initialize_agent, load_tools, Tool
+import openai
+from langchain.agents import AgentExecutor, load_tools
+from langchain.agents.conversational_chat.base import ConversationalChatAgent
 from langchain.chains.conversation.memory import ConversationBufferMemory
-from langchain.llms import OpenAI
 from langchain.chat_models import ChatOpenAI
-from langchain.prompts import PromptTemplate
-from langchain.prompts.chat import (
-    ChatPromptTemplate,
-    HumanMessagePromptTemplate,
-    SystemMessagePromptTemplate,
-)
-from openai.error import (AuthenticationError, InvalidRequestError,
-                          RateLimitError)
-from tools import RFPIO
+# from langchain.prompts.chat import ChatPromptTemplate, HumanMessagePromptTemplate, SystemMessagePromptTemplate
+from openai.error import AuthenticationError, InvalidRequestError, RateLimitError
+
+from agent.CustomAgent import AgentExecutorContext
+from tools import RFPIO, FortiDOC
 
 log = logging.getLogger()
 
 os.environ["OPENAI_API_KEY"] = "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"
 os.environ["SERPAPI_API_KEY"] = "9ded0c35cb5f9933a84c7bb93ee17514de7bd01582c5a111474f464e35631623"
 
-MAX_TOKENS = 2000
+MAX_TOKENS = 512
 TOOLS = ["serpapi"]
 LLM_TOOLS = ["llm-math"]
 
 
-FINAL_PROMPT_TEMPLATE = ChatPromptTemplate(
-    input_variables=["original_words", "num_words", "translate_to"],
-    messages=[
-        SystemMessagePromptTemplate.from_template(
-            "You are a helpful pre-sales network & security engineer assistant, working at Fortinet. \
-Use English technical terms in any language like 'MSSP' or 'VNP'."),
-        HumanMessagePromptTemplate.from_template(
-            "Restate {translate_to} {num_words} the following:\n{original_words}\n\n"),
-    ]
-)
-
-
-def load_chain(tools_name, chat_llm, llm, agent="chat-zero-shot-react-description", verbose=False):
-    chain = None
-    express_chain = None
-    log.info("\ntools_list:", tools_name)
+def load_agent(tools_name, chat_llm, verbose=False):
     tools = load_tools(tools_name)
     tools.append(RFPIO())
+    tools.append(FortiDOC())
+    log.info("\ntools_list: %s", [t.name for t in tools])
 
-    # memory = ConversationBufferMemory(memory_key="chat_history")
+    memory = ConversationBufferMemory(memory_key="chat_history", return_messages=True)
 
-    chain = initialize_agent(tools, chat_llm, agent=agent, verbose=verbose)
-    express_chain = LLMChain(
-        llm=chat_llm, prompt=FINAL_PROMPT_TEMPLATE, verbose=verbose)
+    agent = ConversationalChatAgent.from_llm_and_tools(chat_llm, tools, memory=memory,
+                                                       system_message="You are a helpful pre-sales network & security engineer assistant, working at Fortinet. Use English technical terms in any language like 'MSSP' or 'VNP'.")
 
-    return chain, express_chain
-
-
-def transform_text(desc, express_chain, num_words=0, translate_to=""):
-    num_words_prompt = ""
-    if num_words and int(num_words) != 0:
-        num_words_prompt = "using up to " + str(num_words) + " words"
-
-    translate_to_str = ""
-    if translate_to != "":
-        if translate_to == "auto":
-            translate_to = get_language(desc)
-        translate_to_str = f"in {translate_to}"
-
-    trans_instr = num_words_prompt + translate_to_str
-    if express_chain and len(trans_instr.strip()) > 0:
-        generated_text = express_chain.run(
-            {'original_words': desc, 'num_words': num_words_prompt,
-             'translate_to': translate_to_str}).strip()
-    else:
-        log.info("Not transforming text")
-        generated_text = desc
-
-    return generated_text
+    return AgentExecutor.from_agent_and_tools(agent=agent, tools=tools, verbose=verbose, memory=memory)
 
 
 def run_chain(chain, inp):
@@ -113,24 +69,53 @@ def get_language(text: str) -> str:
     return lang["choices"][0]["message"]["content"].strip().replace(".", "").replace("\n", "")
 
 
-def question(input: str, product: str = ""):
-    llm = OpenAI(temperature=0, max_tokens=MAX_TOKENS, client=None)
-    chat_llm = ChatOpenAI(client=None, model_kwargs={"temperature": 0})
-# , "messages": [{"role": "system", "content": "You are a helpful Pre-sales network & security Engineer assistant, working at Fortinet. \
-# Use English technical terms in any language. "}]},)
-    chain, express_chain = load_chain(TOOLS, chat_llm, llm, verbose=True)
+def chat(user_input: str, verbose: bool = False, interactive: bool = False):
+    """
+    Entry point for the FortiGPT assistant
+    """
+    chat_llm = ChatOpenAI(client=None, model_kwargs={"temperature": 0}, model_name="gpt-3.5-turbo")
+    agent_chain = load_agent(TOOLS, chat_llm, verbose=verbose)
 
-    if chain:
-        output = run_chain(chain, input)
-        transformed_output = transform_text(
-            output, express_chain, num_words=200, translate_to="french")
-        return transformed_output
+    if agent_chain:
+        if interactive:
+            print("\nWelcome to FortiGPT, your pre-sales assistant! How can I help you?")
+            print("Type 'exit' to quit.")
+            while True:
+                user_input = input("> ")
+                if user_input == "exit":
+                    break
+                elif user_input == "help":
+                    print("Type 'exit' to quit.")
+                elif user_input.strip() != "":
+                    output = run_chain(agent_chain, user_input)
+                    print("FortiGPT: " + output)
+                else:
+                    continue
+        else:
+            output = run_chain(agent_chain, user_input)
+            if not args.verbose or not args.debug:
+                print(output)
 
 
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print("Please provide a query")
-        sys.exit(1)
+    # arvg parsing with argparse
+    import argparse
+    parser = argparse.ArgumentParser(
+        prog='FortiGPT',
+        description='Fortinet pre-sales assistant',
+    )
+    parser.add_argument("-q", "--query", help="Query to search for")
+    parser.add_argument("-v", "--verbose", action='store_true', help="Verbose mode")
+    parser.add_argument("-vv", "--debug", action='store_true', help="Verbose mode")
+    args = parser.parse_args()
 
-    query = sys.argv[1]
-    print(question(query))
+    if args.debug:
+        logging.basicConfig(level=logging.DEBUG)
+    else:
+        logging.basicConfig(level=logging.INFO)
+
+    if args.query:
+        chat(args.query, verbose=(args.verbose or args.debug))
+    else:
+        # interactive mode
+        chat(args.query, verbose=(args.verbose or args.debug), interactive=True)

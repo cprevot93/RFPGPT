@@ -331,6 +331,9 @@ def strip_html_tags_and_url(text: str) -> str:
 
 
 def format_response(results: list) -> list[str]:
+    """
+    Format the response into raw text
+    """
     res = []
     for i, r in enumerate(results):
         for j, a in enumerate(r['answers']):
@@ -347,7 +350,7 @@ def format_response(results: list) -> list[str]:
 class RFPIO(BaseTool):
     """Use RFPio to search for answers for Fortinet product."""
     name = "RFPio Search"
-    description = "Use this in addition to the normal search if the question pertains to in-depth Fortinet product functionalities. Inputs of this tool should start with Fortinet product name (no abbreviation) followed by a comma then the query. Queyr MUST be in english. For example, `FortiGate,SD-WAN routing` would be the input if you wanted to search for SD-WAN on Fortigate."
+    description = "Use this in addition to the normal search if the question pertains to in-depth Fortinet product functionalities. Inputs of this tool should start with Fortinet product name (no abbreviation) followed by a comma then the query. Query MUST be in english. For example, `FortiGate,SD-WAN routing` would be the input if you wanted to search for SD-WAN on Fortigate."
 
     def __init__(self, *args, **kwargs):
         """Initialize the tool."""
