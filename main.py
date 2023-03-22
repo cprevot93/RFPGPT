@@ -3,14 +3,18 @@ import os
 # from typing import Any, Dict, List, Optional, Tuple, Union
 
 import openai
-from langchain.agents import AgentExecutor, load_tools
+
+
+from langchain.agents import load_tools
 from langchain.agents.conversational_chat.base import ConversationalChatAgent
 from langchain.chains.conversation.memory import ConversationBufferMemory
 from langchain.chat_models import ChatOpenAI
+
 # from langchain.prompts.chat import ChatPromptTemplate, HumanMessagePromptTemplate, SystemMessagePromptTemplate
 from openai.error import AuthenticationError, InvalidRequestError, RateLimitError
 
-from lib.custom_agent import AgentExecutorContext
+from langchain.agents import AgentExecutor
+from lib.custom_agent import ConversationalChatAgentContext
 from lib import RFPIO, FortiDOC
 
 log = logging.getLogger()
@@ -22,6 +26,8 @@ MAX_TOKENS = 512
 TOOLS = ["serpapi"]
 LLM_TOOLS = ["llm-math"]
 
+SYSTEM_PROMPT = "You are a helpful pre-sales network & security engineer assistant, working at Fortinet. Use English technical terms in any language like 'MSSP' or 'VNP'. You MUST reply in the same language as the question."
+
 
 def load_agent(tools_name, chat_llm, verbose=False):
     tools = load_tools(tools_name)
@@ -31,10 +37,10 @@ def load_agent(tools_name, chat_llm, verbose=False):
 
     memory = ConversationBufferMemory(memory_key="chat_history", return_messages=True)
 
-    agent = ConversationalChatAgent.from_llm_and_tools(chat_llm, tools, memory=memory,
-                                                       system_message="You are a helpful pre-sales network & security engineer assistant, working at Fortinet. Use English technical terms in any language like 'MSSP' or 'VNP'. Reply in the same language as the question.")
+    qa_agent = ConversationalChatAgentContext.from_llm_and_tools(
+        chat_llm, tools, memory=memory, system_message=SYSTEM_PROMPT)
 
-    return AgentExecutorContext.from_agent_and_tools(agent=agent, tools=tools, verbose=verbose, memory=memory)
+    return AgentExecutor.from_agent_and_tools(agent=qa_agent, tools=tools, verbose=verbose, memory=memory)
 
 
 def run_chain(chain, inp):

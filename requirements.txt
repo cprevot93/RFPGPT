@@ -1,6 +1,8 @@
+beautifulsoup4
+chromadb
 google-search-results
-openai
 langchain
+openai
 selenium
 selenium-requests
-beautifulsoup4
+unstructured[local-inference]
