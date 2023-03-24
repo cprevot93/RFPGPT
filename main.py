@@ -14,8 +14,9 @@ from langchain.chat_models import ChatOpenAI
 from openai.error import AuthenticationError, InvalidRequestError, RateLimitError
 
 from langchain.agents import AgentExecutor
-from lib.custom_agent import ConversationalChatAgentContext
-from lib import RFPIO, FortiDOC
+from tools.custom_agent import ConversationalChatAgentContext
+from tools import RFPIO, FortiDocs
+from tools import ingest_file
 
 log = logging.getLogger()
 
@@ -26,13 +27,13 @@ MAX_TOKENS = 512
 TOOLS = ["serpapi"]
 LLM_TOOLS = ["llm-math"]
 
-SYSTEM_PROMPT = "You are a helpful pre-sales network & security engineer assistant, working at Fortinet. Use English technical terms in any language like 'MSSP' or 'VNP'. You MUST reply in the same language as the question."
+SYSTEM_PROMPT = "Assistant is a helpful pre-sales network & security engineer assistant, working for Fortinet. Assistant use english technical terms in any language like 'MSSP' or 'VNP'. Assistant MUST reply in the same language as the question."
 
 
 def load_agent(tools_name, chat_llm, verbose=False):
     tools = load_tools(tools_name)
     tools.append(RFPIO())
-    tools.append(FortiDOC())
+    tools.append(FortiDocs())
     log.info("\ntools_list: %s", [t.name for t in tools])
 
     memory = ConversationBufferMemory(memory_key="chat_history", return_messages=True)
@@ -110,7 +111,9 @@ if __name__ == "__main__":
         prog='FortiGPT',
         description='Fortinet pre-sales assistant',
     )
-    parser.add_argument("-q", "--query", help="Query to search for")
+    parser.add_argument("-q", "--query", type=str, help="Query to search for")
+    parser.add_argument("-n", "--filename", type=str, help="Filename for ingest file")
+    parser.add_argument("-i", "--ingest", type=str, help="Ingest a file")
     parser.add_argument("-v", "--verbose", action='store_true', help="Verbose mode")
     parser.add_argument("-vv", "--debug", action='store_true', help="Verbose mode")
     args = parser.parse_args()
@@ -119,6 +122,10 @@ if __name__ == "__main__":
         logging.basicConfig(level=logging.DEBUG)
     else:
         logging.basicConfig(level=logging.INFO)
+
+    if args.ingest:
+        ingest_file(args.ingest, args.filename)
+        exit(0)
 
     if args.query:
         chat(args.query, verbose=(args.verbose or args.debug))
