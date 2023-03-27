@@ -26,6 +26,8 @@ API_PRODUCT_LIST_URL = 'https://docs.fortinet.com/api/products'
 API_PRODUCT_LIST_FILENAME = 'docs_api_product_list.json'
 API_PRODUCT_LIST_PATH = os.path.join(TMP_FOLDER, API_PRODUCT_LIST_FILENAME)
 
+LAST_FGT_FIRMWARE_VERSION = '7.2.4'
+
 
 def _get_product_id(product_name: str) -> str:
     """
@@ -84,7 +86,7 @@ def _get_query(query: str, product_tag: str) -> list:
     return _j
 
 
-def _construct_url(result: dict) -> str:
+def _construct_url(result: dict, version: str = "auto") -> str:
     """
     Construct the URL for the result
     """
@@ -94,12 +96,20 @@ def _construct_url(result: dict) -> str:
     def versiontuple(v: str):
         return tuple(map(int, (v.split("."))))
 
-    most_recent_version = result['versions'][0]
-    for _v in result['versions']:
-        if versiontuple(_v['version']['version']) > versiontuple(most_recent_version['version']['version']):
-            most_recent_version = _v
+    if version == "auto":
+        version_obj = result['versions'][0]  # first in the list
+        for _v in result['versions'][1:]:
+            if versiontuple(_v['version']['version']) > versiontuple(version_obj['version']['version']):
+                version_obj = _v
+    else:
+        for _v in result['versions']:
+            if _v['version']['version'] == version:
+                version_obj = _v
+                break
+        else:
+            raise ValueError(f"Version {version} not found")
 
-    return f"https://docs.fortinet.com/document/{result['product']['slug']}/{most_recent_version['version']['version']}/{most_recent_version['document']['slug']}/{most_recent_version['page']['permanent_id']}/{most_recent_version['page']['slug']}"
+    return f"https://docs.fortinet.com/document/{result['product']['slug']}/{version_obj['version']['version']}/{version_obj['document']['slug']}/{version_obj['page']['permanent_id']}/{version_obj['page']['slug']}"
 
 
 def format_response(main_content: Union[Tag, NavigableString]) -> str:
@@ -142,14 +152,24 @@ def _construct_collection_name(product_tag: str, product_version: str) -> str:
     """
     Construct the collection name for the product and version
     """
-    return f"docs_{product_tag}_{product_version}"
+    return f"docs-{product_tag.lower()}-{product_version.replace('.', '_')}"
 
 
-def searchDB(query: str, product_tag: str, product_version: str) -> str:
+def _search_documents(query: str, product_tag: str, product_version: str, verbose: bool = False) -> Dict[str, Any]:
     """
     Search query in the database document
     """
+    if product_version == "0":
+        product_version = _select_latest_firmware(product_tag)
+
     collection_name = _construct_collection_name(product_tag, product_version)
+    return search_file(query, collection_name, verbose=verbose)
+
+
+def _select_latest_firmware(product_tag: str) -> str:
+    match product_tag.lower():
+        case "fortigate":
+            return LAST_FGT_FIRMWARE_VERSION
 
 
 def scrap_docs(query: str, product_tag: str, raw=False) -> str:
@@ -175,7 +195,7 @@ def scrap_docs(query: str, product_tag: str, raw=False) -> str:
     return content
 
 
-CONTEXT_PROMPT = "CONTEXT:You must ask the human about {context}. Reply with schema #2."
+CONTEXT_PROMPT = "CONTEXT:You must ask me about {context}. Reply with schema #2."
 
 
 class FortiDocs(BaseTool):
@@ -206,10 +226,14 @@ If you don't know the product name, you must input 0. If you don't know the firm
 
         if product_tag == "0":
             return CONTEXT_PROMPT.format(context="the product name")
-        if firmware_version == "0":
-            return CONTEXT_PROMPT.format(context="the firmware version")
+        # if firmware_version == "0":
+        #     return CONTEXT_PROMPT.format(context="the firmware version")
 
-        output = scrap_docs(query.strip(), product_tag.strip())
+        search_doc = _search_documents(query, product_tag, firmware_version)
+        if search_doc["answer"] == "I don't know":
+            output = scrap_docs(query.strip(), product_tag.strip())
+        else:
+            output = search_doc["answer"]
 
         return output
 

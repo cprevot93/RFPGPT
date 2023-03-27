@@ -1,22 +1,19 @@
 import logging
 import os
-# from typing import Any, Dict, List, Optional, Tuple, Union
 
 import openai
-
-
-from langchain.agents import load_tools
+# from typing import Any, Dict, List, Optional, Tuple, Union
+from colorama import Fore
+from langchain.agents import AgentExecutor, load_tools
 from langchain.agents.conversational_chat.base import ConversationalChatAgent
 from langchain.chains.conversation.memory import ConversationBufferMemory
 from langchain.chat_models import ChatOpenAI
-
 # from langchain.prompts.chat import ChatPromptTemplate, HumanMessagePromptTemplate, SystemMessagePromptTemplate
-from openai.error import AuthenticationError, InvalidRequestError, RateLimitError
+from openai.error import (AuthenticationError, InvalidRequestError,
+                          RateLimitError)
 
-from langchain.agents import AgentExecutor
+from tools import RFPIO, FortiDocs, ingest_file
 from tools.custom_agent import ConversationalChatAgentContext
-from tools import RFPIO, FortiDocs
-from tools import ingest_file
 
 log = logging.getLogger()
 
@@ -95,7 +92,7 @@ def chat(user_input: str, verbose: bool = False, interactive: bool = False):
                     print("Type 'exit' to quit.")
                 elif user_input.strip() != "":
                     output = run_chain(agent_chain, user_input)
-                    print("FortiGPT: " + output)
+                    print(Fore.YELLOW + "FortiGPT: " + output + Fore.RESET)
                 else:
                     continue
         else:
@@ -114,6 +111,7 @@ if __name__ == "__main__":
     parser.add_argument("-q", "--query", type=str, help="Query to search for")
     parser.add_argument("-n", "--filename", type=str, help="Filename for ingest file")
     parser.add_argument("-i", "--ingest", type=str, help="Ingest a file")
+    parser.add_argument("-c", "--collection", type=str, help="Ingest a file to a specific collection")
     parser.add_argument("-v", "--verbose", action='store_true', help="Verbose mode")
     parser.add_argument("-vv", "--debug", action='store_true', help="Verbose mode")
     args = parser.parse_args()
@@ -124,7 +122,7 @@ if __name__ == "__main__":
         logging.basicConfig(level=logging.INFO)
 
     if args.ingest:
-        ingest_file(args.ingest, args.filename)
+        ingest_file(args.ingest, args.filename, args.collection)
         exit(0)
 
     if args.query:

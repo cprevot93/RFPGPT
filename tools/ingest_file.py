@@ -3,6 +3,7 @@ import logging
 import os
 import re
 from typing import Any, Dict, Union
+from colorama import Fore
 
 import requests
 from langchain import OpenAI
@@ -63,6 +64,8 @@ def ingest_file(file: str, filename: str, collection_name: str = "langchain") ->
         metadatas = [{"source": f"{file}-{i}-pl"} for i in range(len(texts))]
 
     # Here we create a vector store from the documents and save it to disk.
+    if collection_name is None:
+        collection_name = "langchain"
     docsearch = Chroma.from_documents(docs, EMBEDDINGS, persist_directory=PERSIST_DIRECTORY,
                                       metadatas=metadatas, collection_name=collection_name)
     docsearch.persist()
@@ -105,17 +108,6 @@ if __name__ == "__main__":
     # arvg parsing with argparse
     import argparse
 
-    class bcolors:
-        HEADER = '\033[95m'
-        OKBLUE = '\033[94m'
-        OKCYAN = '\033[96m'
-        OKGREEN = '\033[92m'
-        WARNING = '\033[93m'
-        FAIL = '\033[91m'
-        ENDC = '\033[0m'
-        BOLD = '\033[1m'
-        UNDERLINE = '\033[4m'
-
     parser = argparse.ArgumentParser(
         prog='FortiGPT PDF',
         description='Fortinet pre-sales assistant',
@@ -137,4 +129,4 @@ if __name__ == "__main__":
     collection = args.collection if args.collection else "langchain"
     output = main(args.query, args.file, collection)
     if output:
-        print(bcolors.WARNING + "Answer:", output['answer'], "\nSources:", output["sources"] + bcolors.ENDC)
+        print(Fore.YELLOW + "Answer:", output['answer'], "\nSources:", output["sources"])
