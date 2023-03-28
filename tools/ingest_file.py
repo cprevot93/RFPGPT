@@ -9,8 +9,7 @@ from chromadb import errors as chromadb_errors
 import requests
 from langchain import OpenAI
 from langchain.chains import RetrievalQAWithSourcesChain
-from langchain.document_loaders.base import BaseLoader
-from langchain.document_loaders import PyPDFLoader
+from langchain.document_loaders import PyMuPDFLoader
 from langchain.document_loaders.csv_loader import CSVLoader
 from langchain.embeddings import OpenAIEmbeddings
 from langchain.text_splitter import RecursiveCharacterTextSplitter
@@ -24,14 +23,14 @@ EMBEDDINGS = OpenAIEmbeddings(client=None)
 DOCUMENTS_FOLDER = "documents"
 
 
-def _loader(file: str) -> Tuple[BaseLoader, str]:
+def _loader(file: str) -> Tuple[Any, str]:
     """
     Lookup for file extension and return the correct loader.
     :param file: file to load
     :return: loader
     """
     if file.endswith(".pdf"):
-        return PyPDFLoader(file), "pdf"
+        return PyMuPDFLoader(file), "pdf"
     elif file.endswith(".csv"):
         return CSVLoader(file), "csv"
     else:
@@ -75,7 +74,7 @@ def ingest_file(file: str, filename: str, collection_name: str = "langchain") ->
 
         log.info("Parsing %s", file)
         loader, document_type = _loader(file)
-        text_splitter = RecursiveCharacterTextSplitter(chunk_size=700, length_function=len)
+        text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, length_function=len)
         texts = loader.load_and_split(text_splitter)
 
         log.debug("Splitted %s:\n%d", file, texts)
@@ -95,21 +94,26 @@ def ingest_file(file: str, filename: str, collection_name: str = "langchain") ->
 
 def search_file(query: str,
                 collection_name: str = "langchain",
+                qa_response: bool = False,
+                with_sources: bool = False,
                 model_name="text-davinci-003",
                 verbose: bool = False
-                ) -> Dict[str, Any]:
+                ):
     """
     Search a query in a document.
     """
-    # Now we can load the persisted database from disk, and use it as normal.
     try:
+        # Now we can load the persisted database from disk, and use it as normal.
         docsearch = Chroma(persist_directory=PERSIST_DIRECTORY,
                            embedding_function=EMBEDDINGS, collection_name=collection_name)
 
-        # search query in documents
-        chain = RetrievalQAWithSourcesChain.from_chain_type(
-            OpenAI(client=None, temperature=0, model_name=model_name), chain_type="stuff", retriever=docsearch.as_retriever())
-        return chain({"question": query}, return_only_outputs=not verbose)
+        # search query in documents with qa
+        if qa_response:
+            chain = RetrievalQAWithSourcesChain.from_chain_type(
+                OpenAI(client=None, temperature=0, model_name=model_name), chain_type="stuff", retriever=docsearch.as_retriever())
+            return chain({"question": query}, return_only_outputs=not verbose)
+        else:
+            return docsearch.similarity_search_with_score(query)
     except chromadb_errors.NoIndexException:
         log.info("No index found in collection %s.", collection_name)
         return {}
