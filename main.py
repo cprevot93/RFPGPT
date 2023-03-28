@@ -1,6 +1,7 @@
 import logging
 import os
 
+import chromadb
 import openai
 # from typing import Any, Dict, List, Optional, Tuple, Union
 from colorama import Fore
@@ -12,7 +13,7 @@ from langchain.chat_models import ChatOpenAI
 from openai.error import (AuthenticationError, InvalidRequestError,
                           RateLimitError)
 
-from tools import RFPIO, FortiDocs, ingest_file
+from tools import RFPIO, FortiDocs, Milestone, ingest_file
 from tools.custom_agent import ConversationalChatAgentContext
 
 log = logging.getLogger()
@@ -31,6 +32,7 @@ def load_agent(tools_name, chat_llm, verbose=False):
     tools = load_tools(tools_name)
     tools.append(RFPIO())
     tools.append(FortiDocs())
+    tools.append(Milestone())
     log.info("\ntools_list: %s", [t.name for t in tools])
 
     memory = ConversationBufferMemory(memory_key="chat_history", return_messages=True)
@@ -77,7 +79,7 @@ def chat(user_input: str, verbose: bool = False, interactive: bool = False):
     """
     Entry point for the FortiGPT assistant
     """
-    chat_llm = ChatOpenAI(client=None, model_kwargs={"temperature": 0}, model_name="gpt-3.5-turbo")
+    chat_llm = ChatOpenAI(client=None, model_kwargs={"temperature": 0}, model_name="gpt-4")
     agent_chain = load_agent(TOOLS, chat_llm, verbose=verbose)
 
     if agent_chain:
@@ -112,6 +114,7 @@ if __name__ == "__main__":
     parser.add_argument("-n", "--filename", type=str, help="Filename for ingest file")
     parser.add_argument("-i", "--ingest", type=str, help="Ingest a file")
     parser.add_argument("-c", "--collection", type=str, help="Ingest a file to a specific collection")
+    parser.add_argument("--delete", action='store_true', help="Delete a collection")
     parser.add_argument("-v", "--verbose", action='store_true', help="Verbose mode")
     parser.add_argument("-vv", "--debug", action='store_true', help="Verbose mode")
     args = parser.parse_args()
@@ -123,6 +126,16 @@ if __name__ == "__main__":
 
     if args.ingest:
         ingest_file(args.ingest, args.filename, args.collection)
+        exit(0)
+
+    if args.delete:
+        collection = args.collection
+        if collection:
+            print(f"Deleting collection {collection}")
+            client = chromadb.Client()
+            client.delete_collection(collection)
+        else:
+            print("Please provide a collection name")
         exit(0)
 
     if args.query:

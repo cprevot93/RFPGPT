@@ -9,7 +9,6 @@ from bs4 import BeautifulSoup as bs, Tag, NavigableString
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 from langchain.tools import BaseTool
-from .context_tool import ContextTool
 from .ingest_file import search_file
 
 log = logging.getLogger(__name__)
@@ -171,6 +170,8 @@ def _select_latest_firmware(product_tag: str) -> str:
         case "fortigate":
             return LAST_FGT_FIRMWARE_VERSION
 
+    raise NotImplementedError(f"Product {product_tag} does not have a latest firmware version defined")
+
 
 def scrap_docs(query: str, product_tag: str, raw=False) -> str:
     """
@@ -202,10 +203,11 @@ class FortiDocs(BaseTool):
     """Use FortiDOC to search in Fortinet Docs database."""
     name = "Fortinet DOCS search"
     description = """
-Use this more than the normal search if you need to search about a feature in a Fortinet product or Fortinet product configuration.
+Use this more than the normal search if assistant need to search about a feature in a Fortinet product or Fortinet product configuration.
 The input should start with the name of the product followed by a comma, the product current firmware version a comma finished by the query.
-The query MUST be in English. For example, `FortiGate,7.2.4,SD-WAN overview` would be the input if you want to search of a SD-WAN documentation on Fortigate in firmware version 7.2.4.
-If you don't know the product name, you must input 0. If you don't know the firmware version, you must input 0. Exemple: `FortiWeb,0,Security features` or `0,7.2.4,IPsec VPN`"""
+The query MUST be in English. If assistant don't know the product name, assistant must input 0, don't guess. If you don't know the firmware version, you must input 0.
+For example, `FortiGate,7.2.4,SD-WAN overview` would be the input if assistant want to search of a SD-WAN documentation on Fortigate in firmware version 7.2.4.
+Example 2: `FortiWeb,0,Security features` if assistant don't know the firmware or `0,7.2.4,IPsec VPN` if assistant don't know the product name."""
 
     def __init__(self, *args, **kwargs):
         """Initialize the tool."""
@@ -230,7 +232,7 @@ If you don't know the product name, you must input 0. If you don't know the firm
         #     return CONTEXT_PROMPT.format(context="the firmware version")
 
         search_doc = _search_documents(query, product_tag, firmware_version)
-        if search_doc["answer"] == "I don't know":
+        if search_doc == {} or search_doc["answer"] == "I don't know":
             output = scrap_docs(query.strip(), product_tag.strip())
         else:
             output = search_doc["answer"]
@@ -255,6 +257,7 @@ if __name__ == '__main__':
     )
     parser.add_argument("-q", "--query", help="Query to search for")
     parser.add_argument("-p", "--product", help="Fortinet product to search for")
+    parser.add_argument("-f", "--firmware", default="0", help="Firmware to search for")
     parser.add_argument("-r", "--raw", action='store_true', help="Don't format the response")
     parser.add_argument("-v", "--verbose", action='store_true', help="Verbose mode")
     args = parser.parse_args()
@@ -272,6 +275,9 @@ if __name__ == '__main__':
         # return product id
         print(_get_product_id(product))
     else:
-        first = scrap_docs(args.query, product, args.raw)
-        print(first)
-        # results = format_response(results)
+        search_doc = _search_documents(args.query, args.product, args.firmware)
+        if search_doc == {} or search_doc["answer"] == "I don't know":
+            output = scrap_docs(args.query.strip(), args.product.strip(), args.raw)
+        else:
+            output = search_doc["answer"]
+        print(output)

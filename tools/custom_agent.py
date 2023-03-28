@@ -14,7 +14,6 @@ from langchain.schema import (
     HumanMessage,
 )
 from langchain.agents.conversational_chat.prompt import (
-    FORMAT_INSTRUCTIONS,
     PREFIX,
     SUFFIX,
     TEMPLATE_TOOL_RESPONSE,
@@ -33,7 +32,43 @@ from langchain.tools.base import BaseTool
 CONTEXT_PATTERN = re.compile(r"^CONTEXT:")
 
 
-class AgentOutputParser(BaseOutputParser):
+# FORMAT_INSTRUCTIONS = """RESPONSE FORMAT INSTRUCTIONS
+# ----------------------------
+
+# When responding to me please, please output a response in one of two formats:
+
+# **Option 1:**
+# Use this if you want the human to use a tool.
+# Markdown code snippet formatted in the following schema:
+
+# ```json
+# {{{{
+#     "action": string \\ The action to take. Must be one of {tool_names}
+#     "action_input": string \\ The input to the action
+# }}}}
+# ```
+
+# **Option #2:**
+# Use this if you want to respond directly to the human. Markdown code snippet formatted in the following schema:
+
+# ```json
+# {{{{
+#     "action": "Final Answer",
+#     "action_input": string \\ You should put what you want to return to use here
+# }}}}
+# ```"""
+
+# SUFFIX = """TOOLS
+# ------
+# Assistant can ask the user to use tools to look up information that may be helpful in answering the users original question. The tools the human can use are:
+
+# {{tools}}
+
+# {format_instructions}
+# """
+
+
+class MyAgentOutputParser(BaseOutputParser):
     def get_format_instructions(self) -> str:
         return FORMAT_INSTRUCTIONS
 
@@ -68,15 +103,18 @@ class ConversationalChatAgentContext(ConversationalChatAgent):
     #     cls,
     #     tools: Sequence[BaseTool],
     #     system_message: str = PREFIX,
-    #     human_message: str = SUFFIX,
+    #     human_message: str = "",
     #     input_variables: Optional[List[str]] = None,
     #     output_parser: Optional[BaseOutputParser] = None,
     # ) -> BasePromptTemplate:
+    #     """
+    #     Create a prompt template for the agent. This variant inject instructions in system message.
+    #     """
     #     tool_strings = "\n".join(
     #         [f"> {tool.name}: {tool.description}" for tool in tools]
     #     )
     #     tool_names = ", ".join([tool.name for tool in tools])
-    #     _output_parser = output_parser or AgentOutputParser()
+    #     _output_parser = output_parser or MyAgentOutputParser()
     #     format_instructions = human_message.format(
     #         format_instructions=_output_parser.get_format_instructions()
     #     )
