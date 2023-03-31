@@ -3,6 +3,10 @@ chromadb
 google-search-results
 langchain
 openai
+pdfrw
+pymupdf
 selenium
 selenium-requests
 unstructured[local-inference]
+django
+djangorestframework

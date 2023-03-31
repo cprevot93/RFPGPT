@@ -25,7 +25,7 @@ MAX_TOKENS = 512
 TOOLS = ["serpapi"]
 LLM_TOOLS = ["llm-math"]
 
-SYSTEM_PROMPT = "Assistant is a helpful pre-sales network & security engineer assistant, working for Fortinet. Assistant use english technical terms in any language like 'MSSP' or 'VNP'. Assistant MUST reply in the same language as the question."
+SYSTEM_PROMPT = "Assistant is a helpful pre-sales network & security engineer assistant, working for Fortinet. Assistant use english technical terms in any language like 'MSSP' or 'VNP'."
 
 
 def load_agent(tools_name, chat_llm, verbose=False):
@@ -38,7 +38,7 @@ def load_agent(tools_name, chat_llm, verbose=False):
     memory = ConversationBufferMemory(memory_key="chat_history", return_messages=True)
 
     qa_agent = ConversationalChatAgentContext.from_llm_and_tools(
-        chat_llm, tools, memory=memory, system_message=SYSTEM_PROMPT)
+        chat_llm, tools, memory=memory, system_message=SYSTEM_PROMPT.format(language="french"))
 
     return AgentExecutor.from_agent_and_tools(agent=qa_agent, tools=tools, verbose=verbose, memory=memory)
 
@@ -79,6 +79,12 @@ def chat(user_input: str, verbose: bool = False, interactive: bool = False):
     """
     Entry point for the FortiGPT assistant
     """
+
+    help = """
+    The following command are available:
+    - 'exit' to quit.
+    """
+
     chat_llm = ChatOpenAI(client=None, model_kwargs={"temperature": 0}, model_name="gpt-4")
     agent_chain = load_agent(TOOLS, chat_llm, verbose=verbose)
 
@@ -91,7 +97,7 @@ def chat(user_input: str, verbose: bool = False, interactive: bool = False):
                 if user_input == "exit":
                     break
                 elif user_input == "help":
-                    print("Type 'exit' to quit.")
+                    print(help)
                 elif user_input.strip() != "":
                     output = run_chain(agent_chain, user_input)
                     print(Fore.YELLOW + "FortiGPT: " + output + Fore.RESET)
@@ -114,6 +120,8 @@ if __name__ == "__main__":
     parser.add_argument("-n", "--filename", type=str, help="Filename for ingest file")
     parser.add_argument("-i", "--ingest", type=str, help="Ingest a file")
     parser.add_argument("-c", "--collection", type=str, help="Ingest a file to a specific collection")
+    parser.add_argument("-s", "--source_name", type=str, help="Verbose mode")
+    parser.add_argument("-l", "--source_link", type=str, help="File source link")
     parser.add_argument("--delete", action='store_true', help="Delete a collection")
     parser.add_argument("-v", "--verbose", action='store_true', help="Verbose mode")
     parser.add_argument("-vv", "--debug", action='store_true', help="Verbose mode")
@@ -124,8 +132,8 @@ if __name__ == "__main__":
     else:
         logging.basicConfig(level=logging.INFO)
 
-    if args.ingest:
-        ingest_file(args.ingest, args.filename, args.collection)
+    if args.ingest or args.source_link:
+        ingest_file(args.ingest, args.filename, args.source_name, args.source_link, args.collection)
         exit(0)
 
     if args.delete:

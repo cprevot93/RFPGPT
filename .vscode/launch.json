@@ -8,8 +8,8 @@
       "name": "Python: Current File",
       "type": "python",
       "request": "launch",
-      "program": "main.py",
-      "args": ["-vv"],
+      "program": "manage.py",
+      "args": ["runserver"],
       "console": "integratedTerminal",
       "justMyCode": true
     }

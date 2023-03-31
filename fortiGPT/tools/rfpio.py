@@ -350,7 +350,10 @@ def format_response(results: list) -> list[str]:
 class RFPIO(BaseTool):
     """Use RFPio to search for answers for Fortinet product."""
     name = "RFPio Search"
-    description = "Use this in addition to the normal search if the question pertains to in-depth Fortinet product functionalities. Inputs of this tool should start with Fortinet product name (no abbreviation) followed by a comma then the query. Query MUST be in english. For example, `FortiGate,SD-WAN routing` would be the input if you wanted to search for SD-WAN on Fortigate."
+    description = """
+    Use this in addition to the normal search if the question is a RFP question.
+    Inputs of this tool should start with Fortinet product name (no abbreviation) followed by a comma then the query.
+    Query MUST be in english. For example, `FortiGate,SD-WAN routing` would be the input if you wanted to search for SD-WAN on Fortigate."""
 
     def __init__(self, *args, **kwargs):
         """Initialize the tool."""
@@ -358,20 +361,20 @@ class RFPIO(BaseTool):
 
     def _run(self, query: str) -> str:
         """Use the tool."""
-        access_token = get_token()
+        __access_token = get_token()
 
-        product, terms = query.split(",")
-        product_tags = [product.strip()]
+        __product, __terms = query.split(",")
+        __product_tags = [__product.strip()]
 
-        results = get_reponses(access_token, terms.strip(), product_tags)
-        results = format_response(results)
+        __results = get_reponses(__access_token, __terms.strip(), __product_tags)
+        __results = format_response(results)
 
-        output = ""
+        __output = ""
         # merge results
-        for r in results:
-            output += r + "\n"
+        for res in __results:
+            __output += res + "\n"
 
-        return output
+        return __output
 
     async def _arun(self, query: str) -> str:
         """Use the tool asynchronously."""
@@ -381,32 +384,44 @@ class RFPIO(BaseTool):
 if __name__ == '__main__':
     access_token = get_token()
 
-    if len(sys.argv) < 2:
-        print("Please provide a query")
-        sys.exit(1)
+    # arvg parsing with argparse
+    import argparse
+    parser = argparse.ArgumentParser(
+        prog='RFPio Search',
+        description='Search in Fortinet RFPio database',
+    )
+    parser.add_argument("-t", "--test", help="Test with head browser")
+    parser.add_argument("-q", "--query", help="Query to search for")
+    parser.add_argument("-p", "--product", help="Fortinet product to search for")
+    parser.add_argument("-f", "--firmware", default="0", help="Firmware to search for")
+    parser.add_argument("-r", "--raw", action='store_true', help="Don't format the response")
+    parser.add_argument("-v", "--verbose", action='store_true', help="Verbose mode")
+    args = parser.parse_args()
 
-    query = sys.argv[1]
-    product_tags = []
+    if args.verbose:
+        logging.basicConfig(level=logging.DEBUG)
+    else:
+        logging.basicConfig(level=logging.INFO)
 
-    if query == "test":
+    if args.test:
         get_reponses_head()
-
-    if query == "clean":
-        print(strip_html_tags_and_url(sys.argv[2]))
         exit(0)
 
-    results = []
-    if os.path.exists(TEST_SAMPLE_PATH):
-        with open(TEST_SAMPLE_PATH, 'r') as f:
-            _j = json.load(f)
-            if 'term' in _j and _j['term'] == query:
-                results = _j['results']
-    if results == []:
-        results = get_reponses(access_token, query, product_tags)
+    if args.query:
+        query = args.query
+        product_tags = [args.product]
+        results = []
+        if os.path.exists(TEST_SAMPLE_PATH):
+            with open(TEST_SAMPLE_PATH, 'r') as f:
+                _j = json.load(f)
+                if 'term' in _j and _j['term'] == query:
+                    results = _j['results']
+        if results == []:
+            results = get_reponses(access_token, query, product_tags)
 
-    results = format_response(results)
-    output = ""
-    # merge results
-    for r in results:
-        output += r + "\n"
-    print(output)
+        results = format_response(results)
+        output = ""
+        # merge results
+        for r in results:
+            output += r + "\n"
+        print(output)

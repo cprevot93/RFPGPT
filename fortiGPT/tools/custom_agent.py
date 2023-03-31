@@ -31,22 +31,23 @@ from langchain.tools.base import BaseTool
 
 CONTEXT_PATTERN = re.compile(r"^CONTEXT:")
 
+CONTEXT_INSTRUCTIONS = "CONTEXT: You MUST ask me about {context} in order to complete the tool input. Reply with schema #2 to respond directly to the human."
 
-# FORMAT_INSTRUCTIONS = """RESPONSE FORMAT INSTRUCTIONS
-# ----------------------------
+FORMAT_INSTRUCTIONS = """RESPONSE FORMAT INSTRUCTIONS
+----------------------------
 
-# When responding to me please, please output a response in one of two formats:
+When responding to me please, please output a response in one of two formats:
 
-# **Option 1:**
-# Use this if you want the human to use a tool.
-# Markdown code snippet formatted in the following schema:
+**Option 1:**
+Use this if you want the human to use a tool.
+Markdown code snippet formatted in the following schema:
 
-# ```json
-# {{{{
-#     "action": string \\ The action to take. Must be one of {tool_names}
-#     "action_input": string \\ The input to the action
-# }}}}
-# ```
+```json
+{{{{
+    "action": string \\ The action to take. Must be one of {tool_names}
+    "action_input": string \\ The input to the action in english
+}}}}
+```
 
 # **Option #2:**
 # Use this if you want to respond directly to the human. Markdown code snippet formatted in the following schema:
@@ -54,39 +55,39 @@ CONTEXT_PATTERN = re.compile(r"^CONTEXT:")
 # ```json
 # {{{{
 #     "action": "Final Answer",
-#     "action_input": string \\ You should put what you want to return to use here
+#     "action_input": string \\ You should put what you want to return to use here in {language}
 # }}}}
 # ```"""
 
-# SUFFIX = """TOOLS
-# ------
-# Assistant can ask the user to use tools to look up information that may be helpful in answering the users original question. The tools the human can use are:
+SUFFIX = """TOOLS
+------
+Assistant can ask the user to use tools to look up information that may be helpful in answering the users original question. The tools the human can use are:
 
-# {{tools}}
+{{tools}}
 
-# {format_instructions}
-# """
+{format_instructions}
+"""
 
 
-class MyAgentOutputParser(BaseOutputParser):
-    def get_format_instructions(self) -> str:
-        return FORMAT_INSTRUCTIONS
+# class MyAgentOutputParser(BaseOutputParser):
+#     def get_format_instructions(self) -> str:
+#         return FORMAT_INSTRUCTIONS
 
-    def parse(self, text: str) -> Any:
-        cleaned_output = text.strip()
-        if "```json" in cleaned_output:
-            _, cleaned_output = cleaned_output.split("```json")
-        if "```" in cleaned_output:
-            cleaned_output, _ = cleaned_output.split("```")
-        if cleaned_output.startswith("```json"):
-            cleaned_output = cleaned_output[len("```json"):]
-        if cleaned_output.startswith("```"):
-            cleaned_output = cleaned_output[len("```"):]
-        if cleaned_output.endswith("```"):
-            cleaned_output = cleaned_output[: -len("```")]
-        cleaned_output = cleaned_output.strip()
-        response = json.loads(cleaned_output)
-        return {"action": response["action"], "action_input": response["action_input"]}
+#     def parse(self, text: str) -> Any:
+#         cleaned_output = text.strip()
+#         if "```json" in cleaned_output:
+#             _, cleaned_output = cleaned_output.split("```json")
+#         if "```" in cleaned_output:
+#             cleaned_output, _ = cleaned_output.split("```")
+#         if cleaned_output.startswith("```json"):
+#             cleaned_output = cleaned_output[len("```json"):]
+#         if cleaned_output.startswith("```"):
+#             cleaned_output = cleaned_output[len("```"):]
+#         if cleaned_output.endswith("```"):
+#             cleaned_output = cleaned_output[: -len("```")]
+#         cleaned_output = cleaned_output.strip()
+#         response = json.loads(cleaned_output)
+#         return {"action": response["action"], "action_input": response["action_input"]}
 
 
 class ConversationalChatAgentContext(ConversationalChatAgent):

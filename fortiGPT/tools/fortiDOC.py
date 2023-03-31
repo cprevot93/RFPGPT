@@ -232,10 +232,10 @@ Example 2: `FortiWeb,0,Security features` if assistant don't know the firmware o
         #     return CONTEXT_PROMPT.format(context="the firmware version")
 
         search_doc = _search_documents(query, product_tag, firmware_version)
-        if search_doc == {} or search_doc["answer"] == "I don't know":
+        if search_doc == {} or 'answer' in search_doc and search_doc["answer"] == "I don't know":
             output = scrap_docs(query.strip(), product_tag.strip())
         else:
-            output = search_doc["answer"]
+            output = str(search_doc)
 
         return output
 
@@ -245,10 +245,6 @@ Example 2: `FortiWeb,0,Security features` if assistant don't know the firmware o
 
 
 if __name__ == '__main__':
-    if len(sys.argv) < 2:
-        print("Please provide a query")
-        sys.exit(1)
-
     # arvg parsing with argparse
     import argparse
     parser = argparse.ArgumentParser(
@@ -276,8 +272,8 @@ if __name__ == '__main__':
         print(_get_product_id(product))
     else:
         search_doc = _search_documents(args.query, args.product, args.firmware)
-        if search_doc == {} or search_doc["answer"] == "I don't know":
+        if search_doc == {} or 'answer' in search_doc and search_doc["answer"] == "I don't know":
             output = scrap_docs(args.query.strip(), args.product.strip(), args.raw)
         else:
-            output = search_doc["answer"]
+            output = search_doc
         print(output)
