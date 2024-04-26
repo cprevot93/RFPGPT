@@ -1,13 +1,21 @@
-# RPFGPT
+# RFPGPT
 
-# OpenAI pricing
+## Description
 
-GTP-4: 0.00003$ / token
-GTP-3.5-turbo: 0.000002$ / token
-text-ada-embeddings: 0.0000004$ / token
-GPT-3, davinci: 0.00003$ / token
+Proof-of-concept of a chat augmented with docs.fortinet.com, rfpio.com and custom documents.
+The idea is to have a chatbot that can answer questions about the FortiGate product line to respond to RFPs (Response For Prososal)
+The thought process is handled by langchain.
+Queries are fetch from docs.fortinet.com and rfpio.com through custom langchain tools.
+Each responses are embedded with OpenAI API embeddings and stored in a chromaDB.
 
-Administration guide PDF: 657378 tokens
-Price to embed PDF: 657378 \* 0.0000004$ = 0.2629512 $
+## Tasks
 
-Average prompt chat GPT-4, 6000 tokens = 0.15 $
+- [x] Tools
+  - [x] RFPIO -> scaping using selenium to handle MFA
+  - [x] docs.fortinet.com -> scraping using requests and beautifulsoup
+  - [x] custom file
+- [ ] Web interface
+
+## Authors
+
+Charles Prevot <cprevot@fortinet.com>, Feb 2023
